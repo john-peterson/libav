@@ -113,6 +113,7 @@ typedef struct RTMPContext {
     TrackedMethod*tracked_methods;            ///< tracked methods buffer
     int           nb_tracked_methods;         ///< number of tracked methods
     int           tracked_methods_size;       ///< size of the tracked methods buffer
+    char*         usher_token;                ///< authentication token for strict servers like Justin.tv
     int           listen;                     ///< listen mode flag
     int           listen_timeout;             ///< listen timeout to wait for new connections
     int           nb_streamid;                ///< The next stream id to return on createStream calls
@@ -828,6 +829,28 @@ static int gen_bytes_read(URLContext *s, RTMPContext *rt, uint32_t ts)
 
     p = pkt.data;
     bytestream_put_be32(&p, rt->bytes_read);
+
+    return rtmp_send_packet(rt, &pkt, 0);
+}
+
+/**
+ * Generate usher token message and send it to the server.
+ */
+static int gen_usher_token(URLContext *s, RTMPContext *rt)
+{
+    RTMPPacket pkt;
+    uint8_t *p;
+    int ret;
+
+    if ((ret = ff_rtmp_packet_create(&pkt, RTMP_SYSTEM_CHANNEL, RTMP_PT_INVOKE,
+                                     0, 49 + strlen(rt->usher_token))) < 0)
+        return ret;
+
+    p = pkt.data;
+    ff_amf_write_string(&p, "NetStream.Authenticate.UsherToken");
+    ff_amf_write_number(&p, ++rt->nb_invokes);
+    ff_amf_write_null(&p);
+    ff_amf_write_string(&p, rt->usher_token);
 
     return rtmp_send_packet(rt, &pkt, 0);
 }
@@ -1704,6 +1727,13 @@ static int handle_invoke_result(URLContext *s, RTMPPacket *pkt)
             goto fail;
 
         if (rt->is_input) {
+            if (rt->usher_token) {
+                /* Send the authentification token for strict servers
+                 * like Justin.tv. */
+                if ((ret = gen_usher_token(s, rt)) < 0)
+                    goto fail;
+            }
+
             /* Send the FCSubscribe command when the name of live
              * stream is defined by the user or if it's a live stream. */
             if (rt->subscribe) {
@@ -2423,6 +2453,7 @@ static const AVOption rtmp_options[] = {
     {"rtmp_swfurl", "URL of the SWF player. By default no value will be sent", OFFSET(swfurl), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC|ENC},
     {"rtmp_swfverify", "URL to player swf file, compute hash/size automatically.", OFFSET(swfverify), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC},
     {"rtmp_tcurl", "URL of the target stream. Defaults to proto://host[:port]/app.", OFFSET(tcurl), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC|ENC},
+    {"rtmp_usher_token", "Authentication token for strict servers like Justin.tv.", OFFSET(usher_token), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC},
     {"rtmp_listen", "Listen for incoming rtmp connections", OFFSET(listen), AV_OPT_TYPE_INT, {.i64 = 0}, INT_MIN, INT_MAX, DEC, "rtmp_listen" },
     {"timeout", "Maximum timeout (in seconds) to wait for incoming connections. -1 is infinite. Implies -rtmp_listen 1",  OFFSET(listen_timeout), AV_OPT_TYPE_INT, {.i64 = -1}, INT_MIN, INT_MAX, DEC, "rtmp_listen" },
     { NULL },

@@ -262,6 +262,9 @@ URL to player swf file, compute hash/size automatically.
 @item rtmp_tcurl
 URL of the target stream. Defaults to proto://host[:port]/app.
 
+@item rtmp_usher_token
+Authentication token for strict servers like Justin.tv.
+
 @end table
 
 For example to read with @command{avplay} a multimedia resource named
